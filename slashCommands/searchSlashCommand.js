@@ -3,6 +3,7 @@ const { db } = require('/home/azurance/azurance-bot/updateDatabase.js');
 const allowedRoleIds= ['961755241366306826', '1061822830175596604', '962400274088095744', '1022441881528975390', '962452151425175562', '962452024593629354', '962451948982894652', '962451835145306132', '962451830850351155', '962451523172990976', '962414108907561010',];
 
 
+
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('search')
@@ -13,7 +14,7 @@ module.exports = {
                   .setAutocomplete(true)
                   .setRequired(true)),
 
-    async execute(interaction) {
+    async execute(interaction, queue) {
 
       const member = interaction.member;
       const hasAllowedRole = member.roles.cache.some(role => allowedRoleIds.includes(role.id));
@@ -36,18 +37,25 @@ module.exports = {
 
         const embed = new EmbedBuilder();
         if (track) {
-            embed.setTitle(`Hiện đã thêm vào danh sách phát`)
+            embed.setTitle(`Hiện đã được thêm vào danh sách phát:`)
                 .setDescription(`**${track.title} của** ***${track.artist}***`)
                 .setColor('Green');
             if (track.coverArtPath) {
               embed.setThumbnail(`file://${track.coverArtPath}`)
             }
 
-            const queue = getQueue(interaction.guildId); 
-            queue.add(track); 
-    
-            if (!queue.isPlaying) {
-                playMusic(interaction.guildId); 
+            const guildId = interaction.guildId;
+            const guildQueue = queue.get(guildId);
+          
+            if (!guildQueue) {
+                guildQueue = createQueue(guildId)
+                queue.set(guildId, guildQueue); 
+            }
+
+            guildQueue.songs.push(track)
+
+            if (!guildQueue.isPlaying) {
+                playMusic(guildId, queue)
             }
 
         } else {
@@ -59,10 +67,17 @@ module.exports = {
     },
     async handleAutocomplete(interaction) {
       const focusedValue = interaction.options.getFocused();
-      const choices = await searchSongs(focusedValue);
-      await interaction.respond(choices.map(choice => ({ name: choice.title, value: choice.title })));
-
-    }
+      try {
+        const songs = await searchSongs(focusedValue);
+        const choices = songs.map(song => ({
+            name: `${song.Title} - ${song.Artist}`, // Format: "Title - Artist"
+            value: song.Title // The value submitted with the interaction
+        }));
+        await interaction.respond(choices);
+        } catch (err) {
+        console.error('Lỗi trong quá trình tra tên track autocomplete:', err);
+      }
+    } 
 
 
 };
@@ -82,12 +97,12 @@ async function findSongByName(name) {
 
 async function searchSongs(searchQuery) {
   return new Promise((resolve, reject) => {
-      const query = `SELECT * FROM Song WHERE Title LIKE ? OR Artist LIKE ? LIMIT 8`; // Limit results to 10 for efficiency
+      const query = `SELECT * FROM Song WHERE Title LIKE ? OR Artist LIKE ? LIMIT 5`;
       db.all(query, [`%${searchQuery}%`, `%${searchQuery}%`], (err, rows) => {
           if (err) {
               reject(err);
           } else {
-              resolve(rows); // Returns an array of song objects that match the searchQuery
+              resolve(rows); 
           }
       });
   });
