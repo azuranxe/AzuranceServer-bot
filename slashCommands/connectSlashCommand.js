@@ -3,7 +3,7 @@ const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerSta
 const { getRandomSongs, getTotalSongCount, insertCurrentSongMetadata } = require('/home/azurance/azurance-bot/utils/musicPlayer.js');
 const path = require('path');
 
-const playedSongs = [];
+const playedSongs = new Set();
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -54,16 +54,23 @@ module.exports = {
     async function playMusic(guildId, queue, db) {
       const guildQueue = queue.get(guildId);
       if (!guildQueue || guildQueue.songs.length === 0) {
-        if (guildQueue.voiceChannel) {
-          guildQueue.voiceChannel.leave();
+        if (playedSongs.size === await getTotalSongCount(db)) {
+            playedSongs.clear();
+            const newSongs = await getRandomSongs(db, await getTotalSongCount(db));
+            guildQueue.songs.push(...newSongs);
         }
-        queue.delete(guildId);
-        return;
+        else if (guildQueue.voiceChannel) {
+          guildQueue.voiceChannel.leave()
+          queue.delete(guildId);
+          return;  
+        }
       }
 
       const songIndex = Math.floor(Math.random() * guildQueue.songs.length);
       const song = guildQueue.songs.splice(songIndex, 1)[0];
-      playedSongs.push(song);
+      if (song) {
+        playedSongs.add(song);
+      }
 
       insertCurrentSongMetadata({
         Title: song.title || 'Unknown Title',
@@ -74,6 +81,8 @@ module.exports = {
         FilePath: song.filePath || 'Unknown FilePath',
         CoverArtPath: song.coverArtPath || null
       });
+
+      console.log(`Song:`, song.title)
 
       if (!song.filePath) {
         console.error('Song file path undefined.');
