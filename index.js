@@ -15,6 +15,18 @@ const client = new Client({
 
 const queue = new Map();
 
+function createQueue(guildId) {
+    return {
+        voiceChannel: '1181385985808937001',
+        textChannel: '1181385985808937001',
+        connection: null,
+        songs: [],
+        volume: 90,
+        playing: true,
+        shuffle: false,
+    };
+  };
+
 require('dotenv').config();
 const token = process.env.DISCORD_TOKEN;
 const clientId = process.env.DISCORD_CLIENTID;
@@ -29,20 +41,6 @@ client.player = new Player(client, {
     }
 })
 
-// function createQueue
-function createQueue(guildId) {
-    return {
-        voiceChannel: '1181385985808937001',
-        textChannel: '1181385985808937001',
-        connection: null,
-        songs: [],
-        volume: 10,
-        playing: true,
-        shuffle: false,
-    };
-};
-
-// deploy slash commands
 client.slashcommands = new Collection();
 const { currentSlashCommand } = require('/home/azurance/azurance-bot/slashCommands/currentSlashCommand.js');
 const { skipSlashCommand } = require('/home/azurance/azurance-bot/slashCommands/skipSlashCommand.js');
@@ -58,13 +56,11 @@ for (const file of commandFiles) {
     const command = require(filePath);
     client.slashcommands.set(command.data.name, command);
 
-    // if load command for registration, add to array
     if (LOAD_SLASH) {
         commands.push(command.data.toJSON());
     };
 };
 
-//Then use this array to register commands with Discord API if needed
 if (LOAD_SLASH) {
     const rest = new REST({version: '10'}).setToken(token);
     console.log('Đang chạy Slash Commands');
@@ -78,7 +74,7 @@ if (LOAD_SLASH) {
             console.error(err);
             process.exit(1)
         });
-} // log in node.js và deploy command execution 
+} 
 else {client.once('ready', () => {
     console.log(`${client.user.tag} đã sẵn sàng rung ~ cảm`);
     
@@ -91,31 +87,38 @@ else {client.once('ready', () => {
         }) 
     }) 
     client.on('interactionCreate', async (interaction) => {
-        if (!interaction.isCommand()) return;
-
-        const command = client.slashcommands.get(interaction.commandName);
-        if (!command) return;
-
-        try { 
-            if (command.name === 'skip') {
-                skipSlashCommand.execute(interaction, queue, db);
-            } else if (command.name === 'current') {
-                currentSlashCommand.execute(interaction, queue, db);
-            } else if (command.name === 'search') {
-                searchSlashCommand.execute(interaction)
-            } else {
-                await command.execute(interaction, queue, createQueue, db);
+        // Check if the interaction is a slash command
+        if (interaction.isCommand()) {
+            const command = client.slashcommands.get(interaction.commandName);
+            if (!command) return;
+    
+            try { 
+                // Handle specific commands
+                if (command.name === 'skip') {
+                    skipSlashCommand.execute(interaction, queue, db);
+                } else if (command.name === 'current') {
+                    currentSlashCommand.execute(interaction, queue, db);
+                } else if (command.name === 'search') {
+                    searchSlashCommand.execute(interaction, queue)
+                } else {
+                    await command.execute(interaction, queue, createQueue, db);
+                }
+            } catch (error) {
+                console.error(error);
+                await interaction.reply({
+                    content: 'Đã xảy ra lỗi khi xử lí lệnh này.',
+                    ephemeral: true
+                });
             }
-
-        } catch (error) {
-            console.error(error);
-            await interaction.reply({
-                content: 'Đã xảy ra lỗi khi xử lí lệnh này.',
-                ephemeral: true
-            });
+        }
+        // Check if the interaction is an autocomplete interaction
+        else if (interaction.isAutocomplete()) {
+            const command = client.slashcommands.get(interaction.commandName);
+            if (command && command.handleAutocomplete) {
+                await command.handleAutocomplete(interaction);
+            }
         }
     });
 }
 
-// đăng nhập
 client.login(token);
