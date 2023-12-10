@@ -8,7 +8,6 @@ let db = new sqlite3.Database('/home/azurance/azurance-bot/myMusicDatabase.db', 
   }
 });
 
-
 function setupTable() {
   db.run(`CREATE TABLE IF NOT EXISTS CurrentSong (
       SongID INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -55,7 +54,6 @@ function getTotalSongCount(db) {
       });
   });
 }
-
 
 function getRandomSongs(db, totalCount) {
   return new Promise((resolve, reject) => {
