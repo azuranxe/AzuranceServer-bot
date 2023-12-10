@@ -12,17 +12,12 @@
   {
     "title": "folklore",
     "artist": "Taylor Swift",
-    "coverArtPath": "https://i.scdn.co/image/ab67616d0000b27395f754318336a07e85ec59bc7"
+    "coverArtPath": "https://i.scdn.co/image/ab67616d0000b273c288028c2592f400dd0b9233"
   },
   {
     "title": "evermore",
     "artist": "Taylor Swift",
     "coverArtPath": "https://i.scdn.co/image/ab67616d0000485133b8541201f1ef38941024be"
-  },
-  {
-    "title": "folklore",
-    "artist": "Taylor Swift",
-    "coverArtPath": "https://i.scdn.co/image/ab67616d0000b27395f754318336a07e85ec59bc7"
   },
   {
     "title": "Fearless (Taylor's Version)",
@@ -87,7 +82,7 @@
   {
     "title": "Savage - The 1st Mini Album",
     "artist": "aespa",
-    "coverArtPath": "https://i.scdn.co/image/ab67616d0000b273164feb363334f93b6458d2a9"
+    "coverArtPath": "https://i.scdn.co/image/ab67616d0000b273d8cc2281fcd4519ca020926b"
   },
   {
     "title": "D-DAY",
@@ -99,7 +94,4 @@
     "artist": "Agust D",
     "coverArtPath": "https://i.scdn.co/image/ab67616d0000b27353bfecd78b83e97c4f0794e4"
   }
-
-
-
 ]
