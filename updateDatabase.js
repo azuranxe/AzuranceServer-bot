@@ -1,160 +1,116 @@
 const sqlite3 = require('sqlite3').verbose();
-const fs = require('node:fs');
-const path = require('node:path');
 const mm = require('music-metadata');
+const fs = require('fs');
+const path = require('path');
 
-const musicDirectory = './music-database';
+const db = new sqlite3.Database('./musicDatabase.db');
 
-const db = new sqlite3.Database('./myMusicDatabase.db', (err) => {
-    if (err) {
-        console.error(err.message);
-    } else {
-        console.log('Connected to the SQLite database.');
-        setupTables();
-        setupAlbumTable();
-        scanAndUpdateMusicDatabase()
-    }
-});
+// Creating the Albums Table first
+db.run(`CREATE TABLE IF NOT EXISTS albums (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT,
+  artist TEXT,
+  release_year INTEGER,
+  cover_art_path TEXT NULL,
+  UNIQUE(name, artist) ON CONFLICT IGNORE
+)`);
 
-function setupTables() {
-    db.run(`CREATE TABLE IF NOT EXISTS Song (
-        SongID INTEGER PRIMARY KEY AUTOINCREMENT,
-        Title TEXT NOT NULL,
-        Artist TEXT,
-        Album TEXT,
-        Genre TEXT,
-        ReleaseYear INTEGER,
-        CoverArtPath TEXT,
-        FilePath TEXT NOT NULL,
-        UNIQUE (Title, Artist, FilePath)
-    )`);
+db.run(`CREATE TABLE IF NOT EXISTS songs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT,
+  artist TEXT,
+  album TEXT,
+  release_year INTEGER,
+  filePath TEXT,
+  played INTEGER DEFAULT 0,
+  cover_art_path TEXT NULL,
+  track_number INTEGER,
+  album_id INTEGER,
+  FOREIGN KEY (album_id) REFERENCES albums(id)
+)`);
+
+// Function to process a music file
+async function processMusicFile(filePath) {
+  try {
+      const metadata = await mm.parseFile(filePath);
+      const songName = metadata.common.title || path.basename(filePath, path.extname(filePath));
+      const albumName = metadata.common.album || 'Unknown Album';
+      const songArtist = metadata.common.artist || 'Unknown Artist';
+      const albumArtist = metadata.common.albumartist || songArtist;
+      const releaseYear = metadata.common.year || null;
+      const trackNumber = metadata.common.track.no || 0; // Default track number to 0 if not available
+
+      const albumId = await insertAlbum(albumName, albumArtist, releaseYear);
+      insertSong(songName, songArtist, albumName, releaseYear, albumId, trackNumber, filePath);
+  } catch (err) {
+      console.error(`Lỗi xử lí ${filePath}: ${err.message}`);
+  }
 }
 
-function setupAlbumTable() {
-    db.run(`CREATE TABLE IF NOT EXISTS Album (
-        AlbumID INTEGER PRIMARY KEY AUTOINCREMENT,
-        Album TEXT NOT NULL,
-        Artist TEXT,
-        ReleaseYear INTEGER,
-        CoverArtPath TEXT,
-        UNIQUE (Album, Artist)
-    )`)
-}
-  
-function isMusicFile(file) {
-    const ext = path.extname(file).toLowerCase();
-    return ['.mp3', '.wav', '.ogg', '.flac'].includes(ext);
-}
 
-function saveCoverArtToFile(coverArtData, songFilePath, mimeType) {
-    const imageDirectory = './cover-art-images';
-    if (!fs.existsSync(imageDirectory)) {
-        fs.mkdirSync(imageDirectory, { recursive: true });
-    }
-    const baseName = path.basename(songFilePath, path.extname(songFilePath));
-    const extension = mimeType.split('/')[1];
-    const filename = `${baseName}.${extension}`;
-    const filePath = path.join(imageDirectory, filename);
-    fs.writeFileSync(filePath, coverArtData, 'base64');
-    return filePath;
-}
-
-function extractSongData(filePath, metadata) {
-    let coverArtPath = null;
-    if (metadata.common.picture && metadata.common.picture.length > 0) {
-        const imageBuffer = metadata.common.picture[0].data;
-        const imageFormat = metadata.common.picture[0].format;
-        if (imageBuffer && imageFormat) {
-            coverArtPath = saveCoverArtToFile(imageBuffer, filePath, imageFormat);
-        }
-    }
-    return {
-        song: {
-        title: metadata.common.title,
-        artist: metadata.common.artist,
-        albumartist: metadata.common.albumartist,
-        album: metadata.common.album,
-        duration: metadata.format.duration,
-        filePath: filePath,
-        releaseYear: metadata.common.year,
-        genre: metadata.common.genre ? metadata.common.genre[0] : 'Unknown Genre',
-        coverArt: coverArtPath
-        },
-        album: {
-            album: metadata.common.album,
-            artist: metadata.common.albumartist || metadata.common.artist,
-            releaseYear: metadata.common.year,
-            coverArtPath: coverArtPath
-        }
-    };
-}
-
-// Function to insert or update song data in the database
-function upsertSong(songData) {
-    const upsertSongSQL = `INSERT INTO Song (Title, Artist, Album, Genre, ReleaseYear, CoverArtPath, FilePath)
-                           VALUES (?, ?, ?, ?, ?, ?, ?)
-                           ON CONFLICT(Title, Artist, FilePath) DO UPDATE SET Title = excluded.Title;`;
-    db.run(upsertSongSQL, [songData.title, songData.artist, songData.album, songData.genre, songData.releaseYear, songData.coverArt, songData.filePath], err => {
-        if (err) {
-            console.error("Error upserting into Songs table:", err);
-        }
-    });
-}
-
-// Function to insert song data into the database
-
-function insertSongIntoDatabase(songData) {
-    if (!songData) return;
-
-    upsertSong(songData);
-}
-
-// Function to insert or update album data in the database
-function upsertAlbum(albumData) {
-    const upsertAlbumSQL = `INSERT INTO Album (Album, Artist, ReleaseYear, CoverArtPath)
-                            VALUES (?, ?, ?, ?)
-                            ON CONFLICT(Album, Artist) DO UPDATE SET
-                                ReleaseYear = excluded.ReleaseYear,
-                                CoverArtPath = excluded.CoverArtPath;`;
-
-    db.run(upsertAlbumSQL, [albumData.album, albumData.artist, albumData.releaseYear, albumData.coverArtPath], err => {
-        if (err) {
-            console.error("Error upserting into Albums table:", err);
-        }
-    });
-}
-
-// Function to insert album data into the database
-function insertAlbumIntoDatabase(albumData) {
-    if (!albumData) return;
-
-    upsertAlbum(albumData);
-}
-
-function scanAndUpdateMusicDatabase() {
-    fs.readdir(musicDirectory, (err, files) => {
-        if (err) {
-            console.error("Error reading music directory:", err);
-            return;
-        }
-        files.forEach(file => {
-            if (isMusicFile(file)) {
-                const filePath = path.join(musicDirectory, file);
-                mm.parseFile(filePath)
-                    .then(metadata => {
-                        const data = extractSongData(filePath, metadata);
-                        insertSongIntoDatabase(data.song);
-                        insertAlbumIntoDatabase(data.album);
-                    })
-                    .catch(err => {
-                        console.error("Error reading metadata:", err);
-                    });
+// Function to insert an album into the albums table and return its ID
+function insertAlbum(name, artist, releaseYear) {
+    return new Promise((resolve, reject) => {
+        const checkQuery = `SELECT id FROM albums WHERE TRIM(name) = TRIM(?) AND TRIM(artist) = TRIM(?)`;
+        db.get(checkQuery, [name, artist], function(err, row) {
+            if (err) {
+                reject(err);
+                return;
+            }
+            if (!row) { // If the album does not exist, insert it
+                const insertQuery = `INSERT INTO albums (name, artist, release_year) VALUES (TRIM(?), TRIM(?), ?)`;
+                db.run(insertQuery, [name, artist, releaseYear], function(err) {
+                    if (err) {
+                        reject(err);
+                        return;
+                    }
+                    console.log(`Thêm album mới vào database: ${name} bởi ${artist}`);
+                    resolve(this.lastID);
+                });
+            } else {
+                resolve(row.id); // If album exists, just return its ID without logging
             }
         });
     });
 }
 
-module.exports = {
-    db,
-    insertSongIntoDatabase
+// Function to insert a song into the songs table
+function insertSong(name, artist, album, releaseYear, albumId, trackNumber, filePath) {
+    const checkQuery = `SELECT id FROM songs WHERE TRIM(name) = TRIM(?) AND TRIM(artist) = TRIM(?) AND album_id = ?`;
+    db.get(checkQuery, [name, artist, albumId], function(err, row) {
+        if (err) {
+            console.error(err.message);
+            return;
+        }
+        if (!row) { // If the song does not exist, insert it
+            const insertQuery = `INSERT INTO songs (name, artist, album, release_year, album_id, track_number, filePath) VALUES (?, ?, ?, ?, ?, ?, ?)`;
+            db.run(insertQuery, [name, artist, album, releaseYear, albumId, trackNumber, filePath], function(err) {
+                if (err) {
+                    console.error(err.message);
+                    return;
+                }
+                console.log(`Database đã được thêm bài mới tại ${this.lastID}`);
+            });
+        }
+        // If song exists, do nothing (no log)
+    });
 }
+
+
+// Directory containing music files
+const musicDirectory = './music-database';
+
+// Read all files from the music directory and process them
+fs.readdir(musicDirectory, (err, files) => {
+    if (err) {
+        return console.error(`Lỗi đọc file: ${err.message}`);
+    }
+
+    files.forEach(file => {
+        const filePath = path.join(musicDirectory, file);
+        processMusicFile(filePath);
+    });
+});
+
+// Note: Handle the closing of the database appropriately
+// db.close(); // Uncomment and move to a suitable place
